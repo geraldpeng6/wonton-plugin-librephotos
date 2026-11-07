@@ -37,7 +37,8 @@ identity_check() {
     { echo "当前用户不是用户管理员：$(head -c 200 <<<"$me")"; return 1; }
 }
 
-# 数据：建一个名字带随机标记的相册（应用的“新建相册”），data_check 按标记找回。
+# 数据：建一个名字带随机标记的相册（应用的“新建相册”），标记写进 SMOKE_STATE 文件，
+# data_check 读回按标记找回。
 data_write() {
   local access marker r
   marker="wonton-smoke-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
@@ -47,12 +48,13 @@ data_write() {
     { echo "建相册失败：$r"; return 1; }
   jq -e --arg m "$marker" '.title == $m' <<<"$r" >/dev/null ||
     { echo "相册没建成：$(head -c 150 <<<"$r")"; return 1; }
-  printf '%s' "$marker" > "$SMOKE_STATE/album-marker"
+  printf '%s' "$marker" > "$SMOKE_STATE"
 }
 
 data_check() {
   local access marker r
-  marker="$(cat "$SMOKE_STATE/album-marker" 2>/dev/null)" || { echo "没有标记可查"; return 1; }
+  marker="$(cat "$SMOKE_STATE" 2>/dev/null)" || { echo "没有标记可查"; return 1; }
+  [[ -n "$marker" ]] || { echo "没有标记可查"; return 1; }
   access="$(librephotos_access)" || return 1
   r="$(web_get "/api/albums/user/list/?search=$marker" -H "Authorization: Bearer $access")" ||
     { echo "列相册失败：$r"; return 1; }
