@@ -5,3 +5,7 @@ updates:
     directory: /
     schedule:
       interval: daily
+    # 数据库大版本由 pgautoupgrade 自己在启动时升级，dependabot 不跨大版本动它
+    ignore:
+      - dependency-name: "pgautoupgrade/pgautoupgrade"
+        update-types: ["version-update:semver-major"]
