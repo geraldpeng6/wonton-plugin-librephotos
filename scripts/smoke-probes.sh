@@ -4,6 +4,8 @@
 # （SMOKE_STATE/SMOKE_JAR/SMOKE_WEB_URL/SMOKE_OWNER）和助手（web_get/dweb）。
 # 应用 API 经核心网关进来：网关认会话 cookie（web_get 自带），JWT 是应用自己的认证，
 # 两者都要带。
+# 下面两行仅给读者速览（sso=oidc、无 mcp），套件并不读取它们：探针套件自己从清单
+# 解析（SMOKE_SSO/SMOKE_MCP），e2e 侧在 e2e/plugins/librephotos.sh 里另有同名变量。
 SSO=oidc
 MCP=0
 
