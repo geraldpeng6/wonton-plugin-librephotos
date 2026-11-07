@@ -117,7 +117,7 @@ configs:
     file: bootstrap.py
 
 x-wonton:
-  spec: "0.6"
+  spec: "0.7"
   id: app.librephotos.librephotos
   version: 0.1.0
   kind: app
@@ -158,6 +158,8 @@ x-wonton:
     sso: oidc
     oidc:
       redirect_paths: [/api/accounts/oidc/wonton/login/callback/]
+      # 应用按已验证邮箱把云吞身份链到管理员账号，主人的身份必须有邮箱。
+      requires_email: true
       # django-allauth 的 OIDC 适配器发现 Hydra 同时支持 basic/post 时默认用 post
       # （65.x 的 basic_auth 逻辑），登记也用 post，两边一致。
       token_endpoint_auth_method: client_secret_post
