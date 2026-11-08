@@ -58,8 +58,9 @@ services:
       start_interval: 5s
 
   # 一次性服务：每次创建容器（安装、升级、重建）都跑。上游入口脚本已经建好管理员，
-  # 这里补它不管的三件事：把库目录指到共享文件夹、同步能变的邮箱、按注入的 OIDC
-  # 变量核对重建认证源（核心重装后客户端密钥是新的，不能“已存在就跳过”）。
+  # 这里补它不管的四件事：把库目录指到共享文件夹、同步能变的邮箱、按注入的 SMTP
+  # 变量把发信配到云吞内部邮箱（notify 权限，应用把它存数据库，没有别的注入口）、
+  # 按注入的 OIDC 变量核对重建认证源（核心重装后客户端密钥是新的，不能“已存在就跳过”）。
   bootstrap:
     image: reallibrephotos/librephotos-unified:1.5.1@sha256:6bdaa4b7ab36943043608668f8c3deceadf18901d7efacbf830cb1f8d583dea6
     user: "${PUID}:${PGID}"
@@ -75,6 +76,10 @@ services:
       DB_PORT: "5432"
       WONTON_OWNER_NAME: ${WONTON_OWNER_NAME:?核心没有注入用户名字}
       WONTON_OWNER_EMAIL: ${WONTON_OWNER_EMAIL:?核心没有注入用户邮箱}
+      # 发信走云吞内部邮箱（notify 权限）：bootstrap 把这三个值写进应用的邮件配置。
+      WONTON_SMTP_HOST: ${WONTON_SMTP_HOST:?核心没有注入邮件服务器}
+      WONTON_SMTP_PORT: ${WONTON_SMTP_PORT:?核心没有注入邮件端口}
+      WONTON_MAIL_FROM: ${WONTON_MAIL_FROM:?核心没有注入发件地址}
       WONTON_OIDC_ISSUER: ${WONTON_OIDC_ISSUER}
       WONTON_OIDC_CLIENT_ID: ${WONTON_OIDC_CLIENT_ID}
       WONTON_OIDC_CLIENT_SECRET: ${WONTON_OIDC_CLIENT_SECRET}
@@ -117,9 +122,9 @@ configs:
     file: bootstrap.py
 
 x-wonton:
-  spec: "0.7"
+  spec: "0.11"
   id: app.librephotos.librephotos
-  version: 0.1.1
+  version: 0.2.0
   kind: app
   title: { en: LibrePhotos }
   description:
@@ -141,14 +146,20 @@ x-wonton:
 
       网页登录走云吞的身份，打开就是自己的账号，不用再注册；首次扫描在网页里点一下开始。
 
+      应用发的信（找回密码）会出现在收件人的 Wonton 私聊里；只发给家里人，外部邮箱发不出。
+
       手机浏览器即开即用，也可以把网页加到主屏当应用。
     en: |
       Turn the photos shared folder into your library: timeline, people, places and events are organized for you; search by face, what is in the picture and text inside photos. Recognition models download automatically on the first scan and run locally afterwards.
 
       Sign-in goes through Wonton's identity, so the page opens as your own account; the first scan starts with one click.
 
+      Emails the app sends (password resets) arrive in the recipient's Wonton chat; only household members can receive them.
+
       Works in the phone browser as is, and can be added to the home screen as an app.
-  release_notes: { zh: 首个版本。, en: First release. }
+  release_notes:
+    zh: 接上云吞的内部邮箱：找回密码的邮件发到收件人的 Wonton 私聊里。
+    en: "Outgoing email now goes through Wonton's internal mailbox: password-reset emails arrive in the recipient's Wonton chat."
   webui:
     service: backend
     port: 8001
@@ -167,6 +178,8 @@ x-wonton:
     - storage.share.photos:write
     # 识别模型首次下载（Hugging Face 等）、地图瓦片。
     - network.egress
+    # 发信走云吞内部邮箱：找回密码等邮件由核心收下，转进收件人的 Wonton 私聊。
+    - notify
     # 建管理员要用用户名和邮箱；SSO 按已验证邮箱把云吞身份链到应用账号。
     - owner.identity
   secrets:
