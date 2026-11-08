@@ -34,6 +34,24 @@ print(value if value is not None else "")
 PY
 }
 
+# 身份失败时的诊断：一行打全各路由的状态码（网关外侧实测），再看 404 是谁答的。
+probe_diag() { # <access> <uid>
+  local base access uid code list
+  base="${SMOKE_WEB_URL%/}"
+  access="$1"
+  uid="$2"
+  list="api/healthz/ready/ api/auth/sso/config/ api/firsttimesetup/ api/sitesettings/ api/imagetag/ api/user/ api/user/$uid/ api/auth/token/refresh/ api/albums/user/list/ api/no-such-route-diag/"
+  for p in $list; do
+    code="$(curl -sS --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 20 -b "$SMOKE_JAR" \
+      -H "Authorization: Bearer $access" "$base/$p")" || code="ERR"
+    p="${p%/}"
+    printf '%s=%s ' "${p%%/*}/…${p##*/}" "$code"
+  done
+  echo
+  echo "404 响应头：$(curl -sS --noproxy '*' -o /dev/null -D - --max-time 20 -b "$SMOKE_JAR" \
+    -H "Authorization: Bearer $access" "$base/api/user/" 2>&1 | grep -aiE '^(server|content-type|x-wonton):' | tr -d '\r' | tr '\n' ' ')"
+}
+
 # 走一遍完整 OIDC 链：会话 jar 里的核心会话让 Hydra 自动放行，应用回调把身份换成 JWT
 # 落回首页；再按现行前端的取法（useCurrentUserSelfDetailsQuery：access JWT 的 user_id
 # 声明 → GET /api/user/<id>/）调应用的用户接口，确认认出的是用户管理员。
@@ -50,9 +68,7 @@ identity_check() {
   [[ -n "$uid" ]] || { echo "access JWT 没有 user_id 声明"; return 1; }
   me="$(curl -sS --noproxy '*' --fail-with-body -b "$SMOKE_JAR" \
     -H "Authorization: Bearer $access" "${SMOKE_WEB_URL%/}/api/user/$uid/")" ||
-    { echo "/api/user/$uid/ 失败（GET /api/user/ 状态码：$(curl -sS --noproxy '*' -o /dev/null -w '%{http_code}' \
-      -b "$SMOKE_JAR" -H "Authorization: Bearer $access" "${SMOKE_WEB_URL%/}/api/user/")；镜像自报：$(curl -sS --noproxy '*' \
-      --fail-with-body -b "$SMOKE_JAR" -H "Authorization: Bearer $access" "${SMOKE_WEB_URL%/}/api/imagetag/" 2>&1 | head -c 200)）：$me"; return 1; }
+    { probe_diag "$access" "$uid"; echo "/api/user/$uid/ 失败：$(head -c 160 <<<"$me")"; return 1; }
   jq -e --arg u "$SMOKE_OWNER" '.username == $u and .is_superuser == true' <<<"$me" >/dev/null ||
     { echo "当前用户不是用户管理员：$(head -c 200 <<<"$me")"; return 1; }
 }
