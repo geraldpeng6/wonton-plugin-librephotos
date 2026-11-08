@@ -18,7 +18,7 @@ librephotos_access() {
   refresh="$(awk '$6=="refresh"{print $7}' "$SMOKE_JAR" | tail -1)"
   [[ -n "$refresh" ]] || { echo "jar 里没有 refresh cookie"; return 1; }
   r="$(curl -sS --noproxy '*' -b "$SMOKE_JAR" -H 'Content-Type: application/json' \
-    -d "{\"refresh\":\"$refresh\"}" "$SMOKE_WEB_URL/api/auth/token/refresh/")" ||
+    -d "{\"refresh\":\"$refresh\"}" "${SMOKE_WEB_URL%/}/api/auth/token/refresh/")" ||
     { echo "refresh 失败：$r"; return 1; }
   jq -er '.access // empty' <<<"$r"
 }
@@ -29,11 +29,12 @@ identity_check() {
   local access me
   dweb / >/dev/null 2>&1 || { echo "核心会话没建立"; return 1; }
   curl -sS --noproxy '*' -o /dev/null -L -b "$SMOKE_JAR" -c "$SMOKE_JAR" \
-    -H 'Accept: text/html' "$SMOKE_WEB_URL/api/accounts/oidc/wonton/login/" ||
+    -H 'Accept: text/html' "${SMOKE_WEB_URL%/}/api/accounts/oidc/wonton/login/" ||
     { echo "OIDC 登录链走不通"; return 1; }
   access="$(awk '$6=="access"{print $7}' "$SMOKE_JAR" | tail -1)"
   [[ -n "$access" ]] || { echo "SSO 后没有 access cookie"; return 1; }
-  me="$(web_get /api/user/ -H "Authorization: Bearer $access")" ||
+  me="$(curl -sS --noproxy '*' --fail-with-body -b "$SMOKE_JAR" \
+    -H "Authorization: Bearer $access" "${SMOKE_WEB_URL%/}/api/user/")" ||
     { echo "/api/user/ 失败：$me"; return 1; }
   jq -e --arg u "$SMOKE_OWNER" '.results[] | select(.username == $u) | .is_superuser == true' <<<"$me" >/dev/null ||
     { echo "当前用户不是用户管理员：$(head -c 200 <<<"$me")"; return 1; }
@@ -49,8 +50,9 @@ data_write() {
   local access marker r
   marker="wonton-smoke-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
   access="$(librephotos_access)" || return 1
-  r="$(web_get /api/albums/user/edit/ -X POST -H "Authorization: Bearer $access" \
-    -H 'Content-Type: application/json' -d "{\"title\":\"$marker\",\"photos\":[]}")" ||
+  r="$(curl -sS --noproxy '*' --fail-with-body -b "$SMOKE_JAR" -X POST -H "Authorization: Bearer $access" \
+    -H 'Content-Type: application/json' -d "{\"title\":\"$marker\",\"photos\":[]}" \
+    "${SMOKE_WEB_URL%/}/api/albums/user/edit/")" ||
     { echo "建相册失败：$r"; return 1; }
   jq -e --arg m "$marker" '.title == $m' <<<"$r" >/dev/null ||
     { echo "相册没建成：$(head -c 150 <<<"$r")"; return 1; }
@@ -62,7 +64,8 @@ data_check() {
   marker="$(cat "$(marker_file)" 2>/dev/null)" || { echo "没有标记可查"; return 1; }
   [[ -n "$marker" ]] || { echo "没有标记可查"; return 1; }
   access="$(librephotos_access)" || return 1
-  r="$(web_get "/api/albums/user/list/?search=$marker" -H "Authorization: Bearer $access")" ||
+  r="$(curl -sS --noproxy '*' --fail-with-body -b "$SMOKE_JAR" \
+    -H "Authorization: Bearer $access" "${SMOKE_WEB_URL%/}/api/albums/user/list/?search=$marker")" ||
     { echo "列相册失败：$r"; return 1; }
   jq -e --arg m "$marker" 'any(.results[]; .title == $m)' <<<"$r" >/dev/null ||
     { echo "标记相册丢了：$(head -c 200 <<<"$r")"; return 1; }
