@@ -17,7 +17,7 @@ librephotos_access() {
   local refresh r
   refresh="$(awk '$6=="refresh"{print $7}' "$SMOKE_JAR" | tail -1)"
   [[ -n "$refresh" ]] || { echo "jar 里没有 refresh cookie"; return 1; }
-  r="$(curl -sS --noproxy '*' -b "$SMOKE_JAR" -H 'Content-Type: application/json' \
+  r="$(curl -sS --noproxy '*' --fail-with-body -b "$SMOKE_JAR" -H 'Content-Type: application/json' \
     -d "{\"refresh\":\"$refresh\"}" "${SMOKE_WEB_URL%/}/api/auth/token/refresh/")" ||
     { echo "refresh 失败：$r"; return 1; }
   jq -er '.access // empty' <<<"$r"
@@ -51,7 +51,8 @@ identity_check() {
   me="$(curl -sS --noproxy '*' --fail-with-body -b "$SMOKE_JAR" \
     -H "Authorization: Bearer $access" "${SMOKE_WEB_URL%/}/api/user/$uid/")" ||
     { echo "/api/user/$uid/ 失败（GET /api/user/ 状态码：$(curl -sS --noproxy '*' -o /dev/null -w '%{http_code}' \
-      -b "$SMOKE_JAR" -H "Authorization: Bearer $access" "${SMOKE_WEB_URL%/}/api/user/")）：$me"; return 1; }
+      -b "$SMOKE_JAR" -H "Authorization: Bearer $access" "${SMOKE_WEB_URL%/}/api/user/")；镜像自报：$(curl -sS --noproxy '*' \
+      --fail-with-body -b "$SMOKE_JAR" -H "Authorization: Bearer $access" "${SMOKE_WEB_URL%/}/api/imagetag/" 2>&1 | head -c 200)）：$me"; return 1; }
   jq -e --arg u "$SMOKE_OWNER" '.username == $u and .is_superuser == true' <<<"$me" >/dev/null ||
     { echo "当前用户不是用户管理员：$(head -c 200 <<<"$me")"; return 1; }
 }
