@@ -23,20 +23,36 @@ librephotos_access() {
   jq -er '.access // empty' <<<"$r"
 }
 
+# 解 JWT payload 里的一个声明（base64url，无填充）。
+jwt_claim() { # <token> <claim>
+  python3 - "$1" "$2" <<'PY'
+import base64, json, sys
+payload = sys.argv[1].split(".")[1]
+payload += "=" * (-len(payload) % 4)
+value = json.loads(base64.urlsafe_b64decode(payload)).get(sys.argv[2], "")
+print(value if value is not None else "")
+PY
+}
+
 # 走一遍完整 OIDC 链：会话 jar 里的核心会话让 Hydra 自动放行，应用回调把身份换成 JWT
-# 落回首页；再用 JWT + 会话调应用的用户接口，确认认出的是用户管理员。
+# 落回首页；再按现行前端的取法（useCurrentUserSelfDetailsQuery：access JWT 的 user_id
+# 声明 → GET /api/user/<id>/）调应用的用户接口，确认认出的是用户管理员。
+# 1.5.1 起 GET /api/user/（列用户）在镜像里对这种调法回 404，不再用它。
 identity_check() {
-  local access me
+  local access uid me
   dweb / >/dev/null 2>&1 || { echo "核心会话没建立"; return 1; }
   curl -sS --noproxy '*' -o /dev/null -L -b "$SMOKE_JAR" -c "$SMOKE_JAR" \
     -H 'Accept: text/html' "${SMOKE_WEB_URL%/}/api/accounts/oidc/wonton/login/" ||
     { echo "OIDC 登录链走不通"; return 1; }
   access="$(awk '$6=="access"{print $7}' "$SMOKE_JAR" | tail -1)"
   [[ -n "$access" ]] || { echo "SSO 后没有 access cookie"; return 1; }
+  uid="$(jwt_claim "$access" user_id)"
+  [[ -n "$uid" ]] || { echo "access JWT 没有 user_id 声明"; return 1; }
   me="$(curl -sS --noproxy '*' --fail-with-body -b "$SMOKE_JAR" \
-    -H "Authorization: Bearer $access" "${SMOKE_WEB_URL%/}/api/user/")" ||
-    { echo "/api/user/ 失败：$me"; return 1; }
-  jq -e --arg u "$SMOKE_OWNER" '.results[] | select(.username == $u) | .is_superuser == true' <<<"$me" >/dev/null ||
+    -H "Authorization: Bearer $access" "${SMOKE_WEB_URL%/}/api/user/$uid/")" ||
+    { echo "/api/user/$uid/ 失败（GET /api/user/ 状态码：$(curl -sS --noproxy '*' -o /dev/null -w '%{http_code}' \
+      -b "$SMOKE_JAR" -H "Authorization: Bearer $access" "${SMOKE_WEB_URL%/}/api/user/")）：$me"; return 1; }
+  jq -e --arg u "$SMOKE_OWNER" '.username == $u and .is_superuser == true' <<<"$me" >/dev/null ||
     { echo "当前用户不是用户管理员：$(head -c 200 <<<"$me")"; return 1; }
 }
 
