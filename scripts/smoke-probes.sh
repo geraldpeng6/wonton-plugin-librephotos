@@ -1,26 +1,65 @@
-# shellcheck shell=bash
-# scripts/smoke.sh 的一项一项探测，跟着插件走。没写的项会 FAIL 并给出写法，不会默认放行。
-#
-# 页面：web_assert 从标准输入读页面，命中的确是应用的真实页面时返回 0。
-# 身份：identity_check 用应用自己的“当前用户”接口断言认出的是用户管理员。没有用户体系时写 IDENTITY_NA=1，
-#       并在 SMOKE_NOTE 里写原因。dweb / web_get 是带用户会话的请求助手，可继续走应用自己的登录链。
-# 工具：MCP_TOOL 写一个只读工具名（可带插件前缀），MCP_ARGS 是 JSON 参数；mcp_assert 从标准输入读调用结果。
-#       要断言多个工具时改成写 mcp_check；调用前要备数据时写 before_mcp。
-# 数据：合并前要验证“升级/重装不丢用户数据”时写 data_write 和 data_check（两个都写才跑）：data_write 用随机标记写
-#       一条数据并把标记原样存进 $SMOKE_STATE，data_check 读回标记去应用里找，对不上就打印看到了什么并返回非 0。
-#       应用不存用户数据时写 DATA_NA=1（两项记 N/A）。
-# 装之前要准备（如先配出口代理）：写 before_install。
+# shellcheck shell=bash disable=SC2034
 
-web_assert() { grep -q '你好'; }   # 示例页的标题
+# LibrePhotos：sso=oidc；清单没有 mcp。钩子只用两套 harness 都保证的变量
+# （SMOKE_STATE/SMOKE_JAR/SMOKE_WEB_URL/SMOKE_OWNER）和助手（web_get/dweb）。
+# 应用 API 经核心网关进来：网关认会话 cookie（web_get 自带），JWT 是应用自己的认证，
+# 两者都要带。
+# 下面两行仅给读者速览（sso=oidc、无 mcp），套件并不读取它们：探针套件自己从清单
+# 解析（SMOKE_SSO/SMOKE_MCP），e2e 侧在 e2e/plugins/librephotos.sh 里另有同名变量。
+SSO=oidc
+MCP=0
 
-identity_check() { # 页面回显的就是网关注入的用户名
-  local page
-  page="$(dweb /)" || { echo "页面失败：$page"; return 1; }
-  grep -qF "你好，$SMOKE_OWNER" <<<"$page" || { echo "页面没回显用户 $SMOKE_OWNER：$(head -c 120 <<<"$page")"; return 1; }
+web_assert() { grep -qi '<title>LibrePhotos</title>'; } # stdin：应用真实页面（SPA 首页）
+
+# 应用 API 带着网关登录后 SSO 换来的 JWT；access 只有 5 分钟，过期就用 cookie 里的
+# refresh 换新的（未开轮换，refresh 可重复用）。
+librephotos_access() {
+  local refresh r
+  refresh="$(awk '$6=="refresh"{print $7}' "$SMOKE_JAR" | tail -1)"
+  [[ -n "$refresh" ]] || { echo "jar 里没有 refresh cookie"; return 1; }
+  r="$(curl -sS --noproxy '*' -b "$SMOKE_JAR" -H 'Content-Type: application/json' \
+    -d "{\"refresh\":\"$refresh\"}" "$SMOKE_WEB_URL/api/auth/token/refresh/")" ||
+    { echo "refresh 失败：$r"; return 1; }
+  jq -er '.access // empty' <<<"$r"
 }
 
-# 数据：合并前要验证“升级/重装不丢用户数据”时写 data_write 和 data_check（两个都写才跑）：
-#   data_write 用随机标记写一条数据，把标记原样存进 $SMOKE_STATE；data_check 读回标记、去应用里找，
-#   找不到就打印看到了什么并返回非 0。
-# 应用不存用户数据时写 DATA_NA=1（两项记 N/A）。模板的示例页不存数据，所以这里是不适用。
-export DATA_NA=1
+# 走一遍完整 OIDC 链：会话 jar 里的核心会话让 Hydra 自动放行，应用回调把身份换成 JWT
+# 落回首页；再用 JWT + 会话调应用的用户接口，确认认出的是用户管理员。
+identity_check() {
+  local access me
+  dweb / >/dev/null 2>&1 || { echo "核心会话没建立"; return 1; }
+  curl -sS --noproxy '*' -o /dev/null -L -b "$SMOKE_JAR" -c "$SMOKE_JAR" \
+    -H 'Accept: text/html' "$SMOKE_WEB_URL/api/accounts/oidc/wonton/login/" ||
+    { echo "OIDC 登录链走不通"; return 1; }
+  access="$(awk '$6=="access"{print $7}' "$SMOKE_JAR" | tail -1)"
+  [[ -n "$access" ]] || { echo "SSO 后没有 access cookie"; return 1; }
+  me="$(web_get /api/user/ -H "Authorization: Bearer $access")" ||
+    { echo "/api/user/ 失败：$me"; return 1; }
+  jq -e --arg u "$SMOKE_OWNER" '.results[] | select(.username == $u) | .is_superuser == true' <<<"$me" >/dev/null ||
+    { echo "当前用户不是用户管理员：$(head -c 200 <<<"$me")"; return 1; }
+}
+
+# 数据：建一个名字带随机标记的相册（应用的“新建相册”），标记写进 SMOKE_STATE 文件，
+# data_check 读回按标记找回。
+data_write() {
+  local access marker r
+  marker="wonton-smoke-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
+  access="$(librephotos_access)" || return 1
+  r="$(web_get /api/albums/user/edit/ -X POST -H "Authorization: Bearer $access" \
+    -H 'Content-Type: application/json' -d "{\"title\":\"$marker\",\"photos\":[]}")" ||
+    { echo "建相册失败：$r"; return 1; }
+  jq -e --arg m "$marker" '.title == $m' <<<"$r" >/dev/null ||
+    { echo "相册没建成：$(head -c 150 <<<"$r")"; return 1; }
+  printf '%s' "$marker" > "$SMOKE_STATE"
+}
+
+data_check() {
+  local access marker r
+  marker="$(cat "$SMOKE_STATE" 2>/dev/null)" || { echo "没有标记可查"; return 1; }
+  [[ -n "$marker" ]] || { echo "没有标记可查"; return 1; }
+  access="$(librephotos_access)" || return 1
+  r="$(web_get "/api/albums/user/list/?search=$marker" -H "Authorization: Bearer $access")" ||
+    { echo "列相册失败：$r"; return 1; }
+  jq -e --arg m "$marker" 'any(.results[]; .title == $m)' <<<"$r" >/dev/null ||
+    { echo "标记相册丢了：$(head -c 200 <<<"$r")"; return 1; }
+}
