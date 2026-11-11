@@ -115,3 +115,61 @@ data_check() {
   jq -e --arg m "$marker" 'any(.results[]; .title == $m)' <<<"$r" >/dev/null ||
     { echo "标记相册丢了：$(head -c 200 <<<"$r")"; return 1; }
 }
+
+# ---------- 邮件（notify）：找回密码的信经核心内部邮箱投进主人私聊 ----------
+# LibrePhotos 的重置接口永远回 200（防枚举），发信失败只记日志不外显，所以「接口 200」不说明信发出了；
+# 触发后以主人身份读 Matrix 私聊里的 app.wonton.plugin_mail 消息为投递证据（ EmailConfig 由 bootstrap
+# 写库，发信走的就是核心注入的 SMTP——配置不对的话 send_mail 连不上，私聊里就不会有信）。
+# 发往不存在的邮箱时上游根本不发（防枚举），外部 550 拒收在这条触发路径上不可观测，不写假断言。
+extra_check() {
+  local origin bootstrap mail_host mail_port mail_from access out
+  origin="$(app_origin)"
+  declare -F owner_access_token >/dev/null ||
+    { echo "需要 e2e 套件的 owner_access_token（读主人私聊拿投递证据用）"; return 1; }
+
+  # 0) 三个 SMTP 变量进了 bootstrap 容器（core 在安装时注入；EmailConfig 由它写库）
+  bootstrap="$(docker ps -a --format '{{.Names}}' | grep -E "wonton-${SMOKE_INSTANCE}--app-librephotos-librephotos--bootstrap$" | head -1)"
+  [[ -n "$bootstrap" ]] || { echo "找不到 bootstrap 容器"; return 1; }
+  mail_host="$(docker inspect "$bootstrap" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^WONTON_SMTP_HOST=//p' | tail -1)"
+  mail_port="$(docker inspect "$bootstrap" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^WONTON_SMTP_PORT=//p' | tail -1)"
+  mail_from="$(docker inspect "$bootstrap" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^WONTON_MAIL_FROM=//p' | tail -1)"
+  [[ "$mail_host" == "smtp.wonton.internal" && "$mail_port" == "25" &&
+    "$mail_from" == "app.librephotos.librephotos@plugins.wonton.internal" ]] ||
+    { echo "SMTP 变量不对：host=$mail_host port=$mail_port from=$mail_from"; return 1; }
+  echo "SMTP 变量已注入 bootstrap：$mail_host:$mail_port from=$mail_from"
+
+  # 1) 触发找回密码（发给主人账号的邮箱；上游同步 send_mail，接口永远 200）
+  local owner_email mtok before_ts found json seen_room
+  owner_email="${SMOKE_OWNER_EMAIL:-$(read_env WONTON_OWNER_EMAIL 2>/dev/null)}"
+  owner_email="${owner_email:-$(probes_setting WONTON_OWNER_EMAIL 2>/dev/null)}"
+  [[ -n "$owner_email" ]] || { echo "拿不到 WONTON_OWNER_EMAIL（SMOKE_OWNER_EMAIL/read_env 都为空）"; return 1; }
+  out="$(curl -sS --noproxy '*' --fail-with-body -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$owner_email\"}" "$origin/api/auth/password/reset/")" ||
+    { echo "找回密码请求失败：$out"; return 1; }
+  jq -e '.status == true' <<<"$out" >/dev/null || { echo "重置接口回执异常：$out"; return 1; }
+  echo "找回密码已请求（接口 200；是否发出以私聊为准）"
+
+  # 2) 以主人身份读私聊，等 app.wonton.plugin_mail 消息（成功投递在核心日志里静默）
+  mtok="$(owner_access_token)" || { echo "主人 Matrix 登录失败（读私聊拿投递证据用）"; return 1; }
+  before_ts="$(date +%s000)"
+  found=""
+  for _ in $(seq 1 50); do
+    seen_room="$(matrix_curl -H "Authorization: Bearer $mtok" \
+      "http://tuwunel.wonton.internal:8008/_matrix/client/v3/joined_rooms" 2>/dev/null | jq -r '.joined_rooms[]' 2>/dev/null)" || { sleep 3; continue; }
+    while IFS= read -r room; do
+      [[ -n "$room" ]] || continue
+      json="$(matrix_curl -H "Authorization: Bearer $mtok" \
+        "http://tuwunel.wonton.internal:8008/_matrix/client/v3/rooms/$(printf '%s' "$room" | sed 's/!/%21/g;s/:/%3A/g')/messages?dir=b&limit=30" 2>/dev/null)" || continue
+      if jq -e --arg p "app.librephotos.librephotos" --argjson t "$before_ts" '.chunk[] |
+          select(.type == "m.room.message" and .origin_server_ts >= $t and
+          .content["app.wonton.plugin_mail"].plugin_id == $p)' <<<"$json" >/dev/null 2>&1; then
+        found="$room"
+        break
+      fi
+    done <<<"$seen_room"
+    [[ -n "$found" ]] && break
+    sleep 3
+  done
+  [[ -n "$found" ]] || { echo "主人的 Wonton 私聊里没有 LibrePhotos 的重置信（150 秒）"; return 1; }
+  echo "核心已把 LibrePhotos 的重置信投进主人的 Wonton 私聊（房间 $found）"
+}
