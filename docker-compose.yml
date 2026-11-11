@@ -100,7 +100,7 @@ services:
   database:
     # 上游 unified 部署文档推荐的外部数据库镜像（带跨大版本自动升级），amd64 和 arm64 都有；
     # LibrePhotos 1.5.0 起（Django 6.1）要求 PostgreSQL 15+，上游 compose 跑 18。
-    image: pgautoupgrade/pgautoupgrade:18-debian@sha256:45057d4974340c88a88c807e1a425f48e944cd78b1e01bd0951137153a3abf70
+    image: pgautoupgrade/pgautoupgrade:18-debian@sha256:7d72c17113bd91fd25274c210770a0f5cafbbdb05c2fbc5f7e0789516b46902e
     environment:
       POSTGRES_USER: ${WONTON_SECRET_DB_USERNAME}
       POSTGRES_PASSWORD: ${WONTON_SECRET_DB_PASSWORD}
