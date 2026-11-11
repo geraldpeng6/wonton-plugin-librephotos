@@ -25,4 +25,4 @@ LibrePhotos 只有一个免费开源版（MIT，没有付费版），1.1.0 起�
 
 ---
 
-开发流程见[插件开发指南](https://github.com/geraldpeng6/wonton-docs/blob/main/develop.md)，更新套件用 `scripts/dev.sh kit-update`。
+开发流程见[插件开发指南](https://github.com/wontonapp/wonton-docs/blob/main/develop.md)，更新套件用 `scripts/dev.sh kit-update`。
