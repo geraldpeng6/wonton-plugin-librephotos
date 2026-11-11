@@ -142,7 +142,7 @@ extra_check() {
   local owner_email mtok before_ts found json seen_room
   owner_email="${SMOKE_OWNER_EMAIL:-${SMOKE_OWNER:+"${SMOKE_OWNER}@wonton.internal"}}"
   [[ "$owner_email" == *@wonton.internal ]] || owner_email="${SMOKE_OWNER:-owner}@wonton.internal"
-  out="$(curl -sS --noproxy '*' --fail-with-body -H 'Content-Type: application/json' \
+  out="$(curl -sS --noproxy '*' --fail-with-body -b "${SMOKE_JAR:-}" -H 'Content-Type: application/json' \
     -d "{\"email\":\"$owner_email\"}" "$origin/api/auth/password/reset/")" ||
     { echo "找回密码请求失败：$out"; return 1; }
   jq -e '.status == true' <<<"$out" >/dev/null || { echo "重置接口回执异常：$out"; return 1; }
