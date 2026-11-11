@@ -139,7 +139,12 @@ extra_check() {
   echo "SMTP 变量已注入 bootstrap：$mail_host:$mail_port from=$mail_from"
 
   # 1) 触发找回密码（发给主人账号的邮箱；上游同步 send_mail，接口永远 200）
+  # 网关的会话 Cookie 落在插件域名上要先走一遍核心登录+插件首页跳转（jar 里只有核心域的 Cookie 不够）。
   local owner_email mtok before_ts found json seen_room
+  curl -sS --noproxy '*' -o /dev/null -b "${SMOKE_JAR:-}" -c "${SMOKE_JAR:-}" \
+    --data-urlencode "token=${SMOKE_TOKEN:-}" "${SMOKE_BASE%/}/_wonton/login"
+  curl -sS --noproxy '*' -o /dev/null -L -b "${SMOKE_JAR:-}" -c "${SMOKE_JAR:-}" \
+    -H 'Accept: text/html' "${SMOKE_WEB_URL%/}/"
   owner_email="${SMOKE_OWNER_EMAIL:-${SMOKE_OWNER:+"${SMOKE_OWNER}@wonton.internal"}}"
   [[ "$owner_email" == *@wonton.internal ]] || owner_email="${SMOKE_OWNER:-owner}@wonton.internal"
   out="$(curl -sS --noproxy '*' --fail-with-body -b "${SMOKE_JAR:-}" -H 'Content-Type: application/json' \
