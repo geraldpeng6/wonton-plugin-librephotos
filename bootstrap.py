@@ -13,13 +13,17 @@ same state:
   injected variables: the core regenerates the client secret whenever the
   plugin is reinstalled (data kept), so "already exists, skip" would leave a
   dead client behind;
+* the outgoing-email configuration (the app's EmailConfig singleton, edited
+  from Site Settings) is pointed at the Wonton internal mailbox injected with
+  the notify permission — same contract as the SocialApp: a rebuilt container
+  converges back to the injected state;
 * the OIDC_ENABLED site switch is turned on so the login redirect is live.
 """
 
 import os
 
 from allauth.socialaccount.models import SocialApp
-from api.models import User
+from api.models import EmailConfig, User
 from constance import config as site_config
 from django.contrib.sites.models import Site
 
@@ -44,6 +48,25 @@ if not user.scan_directory:
     user.scan_directory = "/data"
     user.save(update_fields=["scan_directory"])
     print("bootstrap: set scan directory /data")
+
+# The core SMTP server sits on the plugin network, offers no STARTTLS/TLS and
+# accepts any credentials; leaving username and secret empty keeps Django from
+# sending AUTH at all. The app stores this configuration in the database and
+# edits it from Site Settings, so bootstrap rewrites it on every container
+# creation, like the SocialApp above. The stored secret is never read back: a
+# rotated SECRET_KEY makes it undecryptable, and only assigning over it avoids
+# failing on that read.
+config = EmailConfig.load()
+config.provider = "custom"
+config.host = os.environ["WONTON_SMTP_HOST"]
+config.port = int(os.environ["WONTON_SMTP_PORT"])
+config.from_email = os.environ["WONTON_MAIL_FROM"]
+config.use_tls = False
+config.use_ssl = False
+config.username = ""
+config.secret = ""
+config.save()
+print("bootstrap: outgoing email set to the Wonton internal mailbox")
 
 app = SocialApp.objects.filter(provider="openid_connect", provider_id=PROVIDER_ID).first()
 if app is None:
