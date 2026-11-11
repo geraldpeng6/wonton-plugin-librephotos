@@ -140,7 +140,7 @@ extra_check() {
 
   # 1) 触发找回密码（发给主人账号的邮箱；上游同步 send_mail，接口永远 200）
   local owner_email mtok before_ts found json seen_room
-  owner_email="${SMOKE_OWNER_EMAIL:-$(read_env WONTON_OWNER_EMAIL 2>/dev/null)}"
+  owner_email="${SMOKE_OWNER_EMAIL:-${SMOKE_OWNER:+"${SMOKE_OWNER}@wonton.internal"}}"
   owner_email="${owner_email:-$(probes_setting WONTON_OWNER_EMAIL 2>/dev/null)}"
   [[ -n "$owner_email" ]] || { echo "拿不到 WONTON_OWNER_EMAIL（SMOKE_OWNER_EMAIL/read_env 都为空）"; return 1; }
   out="$(curl -sS --noproxy '*' --fail-with-body -H 'Content-Type: application/json' \
