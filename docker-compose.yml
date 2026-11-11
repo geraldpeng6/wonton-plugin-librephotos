@@ -126,10 +126,10 @@ x-wonton:
   id: app.librephotos.librephotos
   version: 0.2.0
   kind: app
-  title: { en: LibrePhotos }
+  title: { zh: 智能相册（LibrePhotos）, en: Smart Photo Album (LibrePhotos) }
   description:
-    zh: 把共享文件夹里的照片整理成相册，按人脸、地点和内容搜索
-    en: Turn the photos in your shared folder into a library searchable by face, place and content
+    zh: 会认人、认地点的相册：把共享文件夹里的照片按人物、地点、事件整理好，搜画面内容甚至照片里的字都能找到，网页里也能直接传新照片。适合想按人和地点翻旧照片的人。
+    en: "An album that recognizes people and places: it organizes the photos in your shared folder by who, where and when, finds them by what's in the picture or even text inside it, and lets you upload new ones from the browser. For digging through old photos by person or place."
   icon: icon.png
   notices: [NOTICE]
   screenshots: [screenshots/timeline.jpg, screenshots/detail.png, screenshots/search.png]
@@ -142,7 +142,7 @@ x-wonton:
     en: [Photos, AI]
   about:
     zh: |
-      把共享文件夹 photos 变成自己的相册：时间线、人物、地点、事件都整理好，按人脸、画面内容和照片里的文字搜索。识别模型在首次扫描时自动下载，之后全部在本地运行。
+      把共享文件夹 photos 变成自己的相册：时间线、人物、地点、事件都整理好，按人脸、画面内容和照片里的文字搜索。认人脸、认文字用的 AI 在首次扫描时自动下载，之后都在家里运行。
 
       网页登录走云吞的身份，打开就是自己的账号，不用再注册；首次扫描在网页里点一下开始。
 
@@ -150,7 +150,7 @@ x-wonton:
 
       手机浏览器即开即用，也可以把网页加到主屏当应用。
     en: |
-      Turn the photos shared folder into your library: timeline, people, places and events are organized for you; search by face, what is in the picture and text inside photos. Recognition models download automatically on the first scan and run locally afterwards.
+      Turn the photos shared folder into your own library: timeline, people, places and events are organized for you; search by face, what's in the picture and text inside photos. The AI for face and text recognition downloads on the first scan and runs at home afterwards.
 
       Sign-in goes through Wonton's identity, so the page opens as your own account; the first scan starts with one click.
 
