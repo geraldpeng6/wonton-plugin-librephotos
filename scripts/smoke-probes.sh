@@ -134,6 +134,7 @@ extra_check() {
   # 1) 触发找回密码（发给主人的内部地址：身份声明和应用账号里的邮箱都是它，核心也只收这个域）。
   # kit 的 probes_env 导出过 SMOKE_OWNER_EMAIL；e2e 直调没有，从实例 .env 读（read_env 两边都有）。
   owner_email="${SMOKE_OWNER_EMAIL:-$(read_env WONTON_OWNER_EMAIL 2>/dev/null)}"
+  owner_email="${owner_email:-${SMOKE_OWNER:+"${SMOKE_OWNER}@wonton.internal"}}"
   owner_email="${owner_email:-$(probes_setting WONTON_OWNER_EMAIL 2>/dev/null)}"
   [[ -n "$owner_email" ]] || { echo "拿不到 WONTON_OWNER_EMAIL（SMOKE_OWNER_EMAIL/read_env 都为空）"; return 1; }
   # 网关的会话 Cookie 落在插件域名上要先走一遍核心登录+插件首页跳转（jar 里只有核心域的 Cookie 不够）。
