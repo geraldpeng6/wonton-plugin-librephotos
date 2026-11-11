@@ -112,10 +112,12 @@ data_check() {
 # EmailConfig 由 bootstrap 写库，发信走的就是核心注入的 SMTP——配置不对的话 send_mail 连不上，私聊里就不会有信。
 # 发往不存在的邮箱时上游根本不发（防枚举），外部 550 拒收在这条触发路径上不可观测，不写假断言。
 extra_check() {
-  local origin bootstrap mail_host mail_port mail_from out wp
+  local origin bootstrap mail_host mail_port mail_from out wp owner_email
   origin="$(app_origin)"
+  declare -F owner_access_token >/dev/null ||
+    { echo "需要 e2e 套件的 owner_access_token（读主人私聊拿投递证据用）"; return 1; }
 
-  # 0) 三个 SMTP 变量进了 bootstrap 容器（core 在安装时注入；EmailConfig 由它写库）。
+  # 0) 三个 SMTP 变量进了 bootstrap 容器（core 在安装时注入；EmailConfig 由它写库）
   #    bootstrap 是一次性的，跑完就退出，所以要 -a 连退出的容器一起找。
   bootstrap="$(docker ps -a --format '{{.Names}}' \
     --filter "label=wonton.plugin=$SMOKE_PLUGIN_ID" --filter "label=wonton.service=bootstrap" \
@@ -130,6 +132,10 @@ extra_check() {
   echo "SMTP 变量已注入 bootstrap：$mail_host:$mail_port from=$mail_from"
 
   # 1) 触发找回密码（发给主人的内部地址：身份声明和应用账号里的邮箱都是它，核心也只收这个域）。
+  # kit 的 probes_env 导出过 SMOKE_OWNER_EMAIL；e2e 直调没有，从实例 .env 读（read_env 两边都有）。
+  owner_email="${SMOKE_OWNER_EMAIL:-$(read_env WONTON_OWNER_EMAIL 2>/dev/null)}"
+  owner_email="${owner_email:-$(probes_setting WONTON_OWNER_EMAIL 2>/dev/null)}"
+  [[ -n "$owner_email" ]] || { echo "拿不到 WONTON_OWNER_EMAIL（SMOKE_OWNER_EMAIL/read_env 都为空）"; return 1; }
   # 网关的会话 Cookie 落在插件域名上要先走一遍核心登录+插件首页跳转（jar 里只有核心域的 Cookie 不够）。
   curl -sS --noproxy '*' -o /dev/null -b "$SMOKE_JAR" -c "$SMOKE_JAR" \
     --data-urlencode "token=$SMOKE_TOKEN" "$SMOKE_BASE/_wonton/login"
@@ -138,7 +144,7 @@ extra_check() {
   # 等待先挂后台再触发（套件的用法）：信进私聊是秒级投递，先等后发才等得到。
   probes_owner_room_wait 150 "LibrePhotos" & wp=$!
   out="$(curl -sS --noproxy '*' --fail-with-body -b "$SMOKE_JAR" -H 'Content-Type: application/json' \
-    -d "{\"email\":\"${SMOKE_OWNER}@wonton.internal\"}" "$origin/api/auth/password/reset/")" ||
+    -d "{\"email\":\"$owner_email\"}" "$origin/api/auth/password/reset/")" ||
     { kill "$wp" 2>/dev/null; wait "$wp" 2>/dev/null; echo "找回密码请求失败：$out"; return 1; }
   jq -e '.status == true' <<<"$out" >/dev/null || {
     kill "$wp" 2>/dev/null; wait "$wp" 2>/dev/null
