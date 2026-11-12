@@ -12,7 +12,7 @@
 services:
   backend:
     # 上游官方镜像（reallibrephotos/librephotos-unified，license: MIT）。
-    image: reallibrephotos/librephotos-unified:1.5.1@sha256:6bdaa4b7ab36943043608668f8c3deceadf18901d7efacbf830cb1f8d583dea6
+    image: reallibrephotos/librephotos-unified:1.6.0@sha256:bed9b3ebfa949d1f7d462fd4a02ee3890550de90ca1927120299896405f673e3
     # 以用户身份运行：共享文件夹里写下的照片归用户，数据目录也按 PUID:PGID 交给它。
     user: "${PUID}:${PGID}"
     environment:
@@ -62,7 +62,7 @@ services:
   # 变量把发信配到云吞内部邮箱（notify 权限，应用把它存数据库，没有别的注入口）、
   # 按注入的 OIDC 变量核对重建认证源（核心重装后客户端密钥是新的，不能“已存在就跳过”）。
   bootstrap:
-    image: reallibrephotos/librephotos-unified:1.5.1@sha256:6bdaa4b7ab36943043608668f8c3deceadf18901d7efacbf830cb1f8d583dea6
+    image: reallibrephotos/librephotos-unified:1.6.0@sha256:bed9b3ebfa949d1f7d462fd4a02ee3890550de90ca1927120299896405f673e3
     user: "${PUID}:${PGID}"
     environment:
       TZ: ${TZ}
