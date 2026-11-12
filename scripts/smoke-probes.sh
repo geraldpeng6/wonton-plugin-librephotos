@@ -114,8 +114,6 @@ data_check() {
 extra_check() {
   local origin bootstrap mail_host mail_port mail_from out wp owner_email
   origin="$(app_origin)"
-  declare -F owner_access_token >/dev/null ||
-    { echo "需要 e2e 套件的 owner_access_token（读主人私聊拿投递证据用）"; return 1; }
 
   # 0) 三个 SMTP 变量进了 bootstrap 容器（core 在安装时注入；EmailConfig 由它写库）
   #    bootstrap 是一次性的，跑完就退出，所以要 -a 连退出的容器一起找。
